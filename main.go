@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -15,11 +16,78 @@ import (
 	"time"
 )
 
+var ErrAlreadyAwakened = errors.New("already awakened, wait for TTL expiration or reset")
+
 type AppState struct {
 	lock        sync.Mutex
 	isAwakened  bool
 	bootEntryId *string
 	expiresAt   time.Time // Время истечения TTL
+}
+
+func (s *AppState) TryWakeUp(bootEntryId *string, ttl time.Duration) (time.Time, error) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	now := time.Now()
+	if s.isAwakened && now.Before(s.expiresAt) {
+		return s.expiresAt, ErrAlreadyAwakened
+	}
+
+	// Записываем переданные данные в состояние
+	s.isAwakened = true
+	if bootEntryId != nil && *bootEntryId != "" {
+		val := *bootEntryId
+		s.bootEntryId = &val
+	} else {
+		s.bootEntryId = nil
+	}
+
+	// Указываем время истечения
+	s.expiresAt = now.Add(ttl)
+
+	return s.expiresAt, nil
+}
+
+func (s *AppState) GetInfo(reset bool) AwakeningInfoResponse {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	// Сбрасываем состояние, если истек TTL
+	if s.isAwakened && time.Now().After(s.expiresAt) {
+		s.resetUnlocked()
+	}
+
+	var bootIdCopy *string
+	if s.bootEntryId != nil {
+		val := *s.bootEntryId
+		bootIdCopy = &val
+	}
+
+	// Формируем ответ
+	resp := AwakeningInfoResponse{
+		IsAwakened:  s.isAwakened,
+		BootEntryId: bootIdCopy,
+	}
+
+	// Сбрасываем состояние, если был передал флаг сброса
+	if reset {
+		s.resetUnlocked()
+	}
+
+	return resp
+}
+
+func (s *AppState) Reset() {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	s.resetUnlocked()
+}
+
+func (s *AppState) resetUnlocked() {
+	s.isAwakened = false
+	s.bootEntryId = nil
+	s.expiresAt = time.Time{}
 }
 
 type WakeUpRequest struct {
@@ -60,6 +128,10 @@ func main() {
 	bindPort := flag.String("port", "9009", "Server bind port")
 	flag.Parse()
 
+	if _, err := parseMAC(targetMACAddr); err != nil {
+		log.Fatalf("Некорректный MAC-адрес (%s): %v", targetMACAddr, err)
+	}
+
 	bindAddr := fmt.Sprintf("%s:%s", *bindHost, *bindPort)
 
 	mux := http.NewServeMux()
@@ -81,10 +153,10 @@ func handleWakeUp(res http.ResponseWriter, req *http.Request) {
 	var reqData WakeUpRequest
 
 	// Проверяем валидность тела, если оно есть
-	if req.Body != nil && req.ContentLength != 0 {
+	if req.Body != nil {
 		defer req.Body.Close()
-		if err := json.NewDecoder(io.LimitReader(req.Body, 1024)).Decode(&reqData); err != nil && err != io.EOF {
-			http.Error(res, `{"error": "Invalid JSON body!"}`, http.StatusBadRequest)
+		if err := json.NewDecoder(io.LimitReader(req.Body, 1024)).Decode(&reqData); err != nil && !errors.Is(err, io.EOF) {
+			writeJSONError(res, "Invalid JSON body!", http.StatusBadRequest)
 			return
 		}
 	}
@@ -92,44 +164,39 @@ func handleWakeUp(res http.ResponseWriter, req *http.Request) {
 	// Валидируем boot_entry_id, если он задан
 	if reqData.BootEntryId != nil && *reqData.BootEntryId != "" {
 		if !bootEntryIdPattern.MatchString(*reqData.BootEntryId) {
-			http.Error(res, `{"error": "Field 'boot_entry_id' contains forbidden chars. (allowed: a-z, A-Z, 0-9, _, -)"}`, http.StatusBadRequest)
+			writeJSONError(res, "Field 'boot_entry_id' contains forbidden chars. (allowed: a-z, A-Z, 0-9, _, -)", http.StatusBadRequest)
 			return
 		}
+	}
+
+	expiresAt, err := state.TryWakeUp(reqData.BootEntryId, ttl)
+	if errors.Is(err, ErrAlreadyAwakened) {
+		msg := fmt.Sprintf("Already awakened! Wait until %s or call reset.", expiresAt.Format(time.RFC3339))
+		writeJSONError(res, msg, http.StatusConflict)
+		return
 	}
 
 	// Пытаемся разбудить комп через 'Wake on LAN'
 	targetAddr := fmt.Sprintf("%s:%v", targetWOLAddr, targetWOLPort)
 	if err := awake(targetMACAddr, targetAddr); err != nil {
+		state.Reset()
 		log.Printf("Failed to send WoL Magic Packet: %v", err)
-		http.Error(res, fmt.Sprintf(`{"error": "Failed to send WoL Magic Packet: %v"}`, err), http.StatusInternalServerError)
+		writeJSONError(res, fmt.Sprintf("Failed to send WoL Magic Packet: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	// Лочим состояние
-	state.lock.Lock()
-
-	// Записываем переданные данные в состояние
-	state.isAwakened = true
+	bootEntryLog := "<nil>"
 	if reqData.BootEntryId != nil && *reqData.BootEntryId != "" {
-		val := *reqData.BootEntryId
-		state.bootEntryId = &val
-	} else {
-		state.bootEntryId = nil
+		bootEntryLog = *reqData.BootEntryId
 	}
 
-	// Указываем время истечения
-	state.expiresAt = time.Now().Add(ttl)
-
-	// Снимаем лок
-	state.lock.Unlock()
-
-	log.Printf("Sent WoL Magic Packet to %s for %s, (boot_entry_id: %v, expires_at: %s)",
-		targetWOLAddr, targetMACAddr, state.bootEntryId, state.expiresAt.Format(time.RFC3339))
+	log.Printf("Sent WoL Magic Packet to %s for %s, (boot_entry_id: %s, expires_at: %s)",
+		targetWOLAddr, targetMACAddr, bootEntryLog, expiresAt.Format(time.RFC3339))
 
 	// Шлем HTTP ответ
-	res.Header().Set("Content-Type", "application/json")
-	res.WriteHeader(http.StatusOK)
-	res.Write([]byte(`{"message": "WoL Magic Packet sent!"}`))
+	writeJSON(res, http.StatusOK, map[string]string{
+		"message": "WoL Magic Packet sent!",
+	})
 }
 
 func handleAwakeningInfo(res http.ResponseWriter, req *http.Request) {
@@ -137,30 +204,13 @@ func handleAwakeningInfo(res http.ResponseWriter, req *http.Request) {
 	reset := req.URL.Query().Get("reset") == "true"
 	format := req.URL.Query().Get("format")
 
-	// Лочим состояние
-	state.lock.Lock()
-
-	// Сбрасываем состояние, если истек TTL
-	if state.isAwakened && time.Now().After(state.expiresAt) {
-		state.isAwakened = false
-		state.bootEntryId = nil
+	// Проверяем не задан ли левак в параметре format
+	if format != "" && format != "json" && format != "grub-vars" {
+		writeJSONError(res, "Parameter 'format' supports only 'json' or 'grub-vars'", http.StatusBadRequest)
+		return
 	}
 
-	// Формируем ответ
-	resp := AwakeningInfoResponse{
-		IsAwakened:  state.isAwakened,
-		BootEntryId: state.bootEntryId,
-	}
-
-	// Сбрасываем состояние, если был передал флаг сброса
-	if reset {
-		state.isAwakened = false
-		state.bootEntryId = nil
-		state.expiresAt = time.Time{}
-	}
-
-	// Снимаем лок
-	state.lock.Unlock()
+	resp := state.GetInfo(reset)
 
 	// Возвращаем ответ в формате установки grub переменных
 	// Дабы не ебаться с парсингом JSON-а, а просто задать их через source (...)
@@ -180,17 +230,11 @@ func handleAwakeningInfo(res http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	// Проверяем не задан ли левак в параметре format
-	if format != "" && format != "json" {
-		http.Error(res, `{"error": "Parameter 'format' supports only 'json' or 'grub-vars'"}`, http.StatusInternalServerError)
-	}
-
 	// Вовзращаем JSON по дефолту
-	res.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(res).Encode(resp)
+	writeJSON(res, http.StatusOK, resp)
 }
 
-func awake(macAddr string, ipAddr string) error {
+func parseMAC(macAddr string) ([]byte, error) {
 	// Чистим MAC-адрес от всякой шняги (лишних :, - и .)
 	mac := strings.ReplaceAll(macAddr, "-", "")
 	mac = strings.ReplaceAll(mac, ":", "")
@@ -206,7 +250,15 @@ func awake(macAddr string, ipAddr string) error {
 	// и чекаем размер выходного массива
 	macBytes, err := hex.DecodeString(mac)
 	if err != nil || len(macBytes) != 6 {
-		return fmt.Errorf("invalid MAC-address: %s", macAddr)
+		return nil, fmt.Errorf("invalid MAC-address: %s", macAddr)
+	}
+	return macBytes, nil
+}
+
+func awake(macAddr string, ipAddr string) error {
+	macBytes, err := parseMAC(macAddr)
+	if err != nil {
+		return err
 	}
 
 	// Собираем так называемый магический пакет (Magic Packet)
@@ -230,4 +282,14 @@ func awake(macAddr string, ipAddr string) error {
 	// Шлем в это соединение пакет пробуждения
 	_, err = conn.Write(packet)
 	return err
+}
+
+func writeJSON(res http.ResponseWriter, status int, data any) {
+	res.Header().Set("Content-Type", "application/json; charset=utf-8")
+	res.WriteHeader(status)
+	_ = json.NewEncoder(res).Encode(data)
+}
+
+func writeJSONError(res http.ResponseWriter, message string, status int) {
+	writeJSON(res, status, map[string]string{"error": message})
 }
