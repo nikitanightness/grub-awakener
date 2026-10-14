@@ -129,7 +129,7 @@ func main() {
 	flag.Parse()
 
 	if _, err := parseMAC(targetMACAddr); err != nil {
-		log.Fatalf("Некорректный MAC-адрес (%s): %v", targetMACAddr, err)
+		log.Fatalf("Invalid MAC address (%s): %v", targetMACAddr, err)
 	}
 
 	bindAddr := fmt.Sprintf("%s:%s", *bindHost, *bindPort)
@@ -145,7 +145,7 @@ func main() {
 	log.Println()
 	log.Printf("Server started on %s", bindAddr)
 	if err := http.ListenAndServe(bindAddr, mux); err != nil {
-		log.Fatalf("Ошибка запуска сервера: %v", err)
+		log.Fatalf("Failed to start server: %v", err)
 	}
 }
 
@@ -185,17 +185,18 @@ func handleWakeUp(res http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	bootEntryLog := "<nil>"
+	bootEntryLog := "None"
 	if reqData.BootEntryId != nil && *reqData.BootEntryId != "" {
 		bootEntryLog = *reqData.BootEntryId
 	}
 
-	log.Printf("Sent WoL Magic Packet to %s for %s, (boot_entry_id: %s, expires_at: %s)",
+	msg := fmt.Sprintf("Sent WoL Magic Packet to %s for %s, (boot_entry_id: %s, expires_at: %s)",
 		targetWOLAddr, targetMACAddr, bootEntryLog, expiresAt.Format(time.RFC3339))
+	log.Printf(msg)
 
 	// Шлем HTTP ответ
 	writeJSON(res, http.StatusOK, map[string]string{
-		"message": "WoL Magic Packet sent!",
+		"message": msg,
 	})
 }
 
