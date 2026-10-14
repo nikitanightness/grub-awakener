@@ -1,0 +1,34 @@
+#!/bin/sh
+exec tail -n +3 $0
+
+# Адрес бэкэнда (GRUB LAN Awakener)
+set awakener_host="192.168.1.1"
+set awakener_port="9009"
+
+# Подрубаем нужные модули
+insmod net
+insmod efinet
+insmod http
+
+# Настраиваем сеть через DHCP
+net_bootp
+
+# Дефолтные значения (если не удасться получить данные от бэка или комп запущен с кнопки)
+set is_awakened="false"
+set boot_entry_id=""
+
+# Делаем HTTP запрос к бэку для получения инфы о пробуждении
+source "(http,${awakener_host}:${awakener_port})/v1/awakening-info?reset=true&format=grub-vars"
+
+if [ "${is_awakened}" = "true" ]; then
+    echo "[Awakener] Started via Wake-on-LAN"
+
+    if [ -n "${boot_entry_id}" ]; then
+        echo "[Awakener] Booting specified boot entry: ${boot_entry_id}"
+        set default="${boot_entry_id}"
+        set timeout=1
+    else
+        echo "[Awakener] Booting default boot entry..."
+        sleep 2
+    fi
+fi
