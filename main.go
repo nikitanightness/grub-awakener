@@ -116,7 +116,7 @@ var (
 	// Время жизни инфы о пробуждении
 	ttl time.Duration
 
-	bootEntryIdPattern = regexp.MustCompile(`^[a-zA-Z0-9_\-]+$`) // a-z, A-Z, 0-9, -, _
+	bootEntryIdPattern = regexp.MustCompile(`^[a-zA-Z0-9_\-.]+$`) // a-z, A-Z, 0-9, -, _ и точки (.)
 )
 
 func main() {
