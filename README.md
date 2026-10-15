@@ -37,11 +37,11 @@ actually my first time writing Go! Overall, I really liked it, even though it ha
 
 ## Build
 
-The included `build.sh` compiles the project for **Keenetic Ultra KN-1811** (`linux/arm64`):
+The included `scripts/build.sh` compiles the project for **Keenetic Ultra KN-1811** (`linux/arm64`):
 
 ```bash
-chmod +x build.sh
-./build.sh
+chmod +x scripts/build.sh
+./scripts/build.sh
 ```
 
 ---
@@ -56,10 +56,17 @@ chmod +x build.sh
 
 ### 2. Find Boot Entry IDs in GRUB
 
-To see the available menu entries and their IDs on your Linux machine, run:
+To see the available menu entries and their IDs on your Linux machine, run directly from GitHub:
 
 ```bash
-awk -F"'" '/^[[:space:]]*menuentry / {print "Boot Entry: " $2 "  --->  ID: " $4}' /boot/grub/grub.cfg
+curl -fsSL https://raw.githubusercontent.com/nikitanightness/grub-awakener/main/scripts/list-boot-entry-ids.sh | sh
+```
+
+Or run the local script:
+
+```bash
+chmod +x scripts/list-boot-entry-ids.sh
+./scripts/list-boot-entry-ids.sh
 ```
 
 ### 3. GRUB Configuration
