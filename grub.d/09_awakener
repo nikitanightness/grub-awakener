@@ -2,8 +2,8 @@
 exec tail -n +3 $0
 
 # Адрес бэкэнда (GRUB LAN Awakener)
-set awakener_host="192.168.1.1"
-set awakener_port="9009"
+set awakener_host="<SET_YOUR_BACKEND_IP_HERE>" # e.g.: 192.168.1.1
+set awakener_port="<SET_YOUR_BACKEND_PORT_HERE>" # e.g.: default=9009
 
 # Подрубаем нужные модули
 insmod net
