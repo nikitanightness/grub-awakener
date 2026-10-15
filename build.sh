@@ -2,12 +2,12 @@
 
 set -e
 
-echo "Building 'grub-lan-awakener' for linux/arm64..."
+echo "Building 'grub-awakener' for linux/arm64..."
 
 CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build \
     -trimpath \
     -ldflags="-s -w" \
-    -o grub-lan-awakener \
+    -o grub-awakener \
     main.go
 
-echo "Complete! Output: ./grub-lan-awakener"
+echo "Complete! Output: ./grub-awakener"
