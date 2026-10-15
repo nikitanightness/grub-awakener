@@ -1,6 +1,6 @@
 # GRUB Awakener
 
-**English** | [Русский](README.ru.md)
+**🇺🇸English** | [🇷🇺Русский](README.ru.md)
 
 A lightweight service that lets you wake up a PC over LAN and pick which OS to boot into (in my setup: **Proxmox** or
 **Windows**) directly from GRUB.
