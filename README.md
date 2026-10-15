@@ -102,7 +102,21 @@ sudo chmod +x /etc/grub.d/09_awakener
 sudo update-grub
 ```
 
-### 4. Wake up via `curl`
+### 4. Windows Dual-Boot Note (Important for WoL)
+
+> [!IMPORTANT]
+> If you dual-boot with Windows, you **must** configure your network adapter's power management settings in Windows. Otherwise, after shutting down from Windows, the network adapter will power off completely and Wake-on-LAN will stop working on subsequent boot attempts.
+>
+> 1. Open **Device Manager** (`devmgmt.msc`) in Windows.
+> 2. Expand **Network adapters**, right-click your Ethernet adapter, and open **Properties**.
+> 3. Go to the **Power Management** tab and ensure **all three** checkboxes are checked:
+>    - [x] **Allow the computer to turn off this device to save power** *(Разрешить отключение этого устройства для экономии энергии)*
+>    - [x] **Allow this device to wake the computer** *(Разрешить этому устройству выводить компьютер из ждущего режима)*
+>    - [x] **Only allow a magic packet to wake the computer** *(Разрешать вывод компьютера из ждущего режима только с помощью "магического" пакета)*
+> 4. Go to the **Advanced** tab and ensure **Wake on Magic Packet** is set to **Enabled**.
+> 5. *(Optional but recommended)* Disable **Fast Startup** in Windows (*Control Panel -> Power Options -> Choose what the power buttons do*), as Fast Startup can prevent the network card from staying in a WoL-ready standby state.
+
+### 5. Wake up via `curl`
 
 * **Boot into Proxmox:**
   ```bash
