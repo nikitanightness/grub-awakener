@@ -55,6 +55,7 @@ func (s *AppState) GetInfo(reset bool) AwakeningInfoResponse {
 
 	// Сбрасываем состояние, если истек TTL
 	if s.isAwakened && time.Now().After(s.expiresAt) {
+		log.Printf("State reset! TTL expired at %s", s.expiresAt.Format(time.RFC3339))
 		s.resetUnlocked()
 	}
 
@@ -192,7 +193,7 @@ func handleWakeUp(res http.ResponseWriter, req *http.Request) {
 
 	msg := fmt.Sprintf("Sent WoL Magic Packet to %s for %s, (boot_entry_id: %s, expires_at: %s)",
 		targetWOLAddr, targetMACAddr, bootEntryLog, expiresAt.Format(time.RFC3339))
-	log.Printf(msg)
+	log.Print(msg)
 
 	// Шлем HTTP ответ
 	writeJSON(res, http.StatusOK, map[string]string{
@@ -212,6 +213,25 @@ func handleAwakeningInfo(res http.ResponseWriter, req *http.Request) {
 	}
 
 	resp := state.GetInfo(reset)
+
+	// Формируем читаемый лог
+	bootEntryLog := "NOT_SET"
+	if resp.BootEntryId != nil && *resp.BootEntryId != "" {
+		bootEntryLog = *resp.BootEntryId
+	}
+
+	formatLog := format
+	if formatLog == "" {
+		formatLog = "json"
+	}
+
+	if reset {
+		log.Printf("Awakening info read with reset by %s (reset: %t, format: %s, is_awakened: %t, boot_entry_id: %s)",
+			req.RemoteAddr, reset, formatLog, resp.IsAwakened, bootEntryLog)
+	} else {
+		log.Printf("Awakening info read by %s (is_awakened: %t, boot_entry_id: %s, format: %s)",
+			req.RemoteAddr, resp.IsAwakened, bootEntryLog, formatLog)
+	}
 
 	// Возвращаем ответ в формате установки grub переменных
 	// Дабы не ебаться с парсингом JSON-а, а просто задать их через source (...)
