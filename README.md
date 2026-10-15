@@ -69,6 +69,12 @@ chmod +x scripts/list-boot-entry-ids.sh
 ./scripts/list-boot-entry-ids.sh
 ```
 
+> [!NOTE]
+> **Custom Human-Readable IDs:**
+> You can manually edit `/boot/grub/grub.cfg` to assign simple, readable IDs to each `menuentry` (e.g., `--id proxmox` or `--id windows`).
+> 
+> *Warning:* Since `/boot/grub/grub.cfg` is auto-generated, any manual modifications will be overwritten whenever `update-grub` or `grub-mkconfig` is executed.
+
 ### 3. GRUB Configuration
 
 Place [`grub.d/09_awakener`](grub.d/09_awakener) into `/etc/grub.d/09_awakener`, set your router IP and port, make it
