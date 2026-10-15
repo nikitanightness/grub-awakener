@@ -77,8 +77,25 @@ chmod +x scripts/list-boot-entry-ids.sh
 
 ### 3. GRUB Configuration
 
-Place [`grub.d/09_awakener`](grub.d/09_awakener) into `/etc/grub.d/09_awakener`, set your router IP and port, make it
-executable, and update GRUB:
+#### Quick Install (directly from GitHub)
+
+Run the interactive setup script directly from GitHub:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/nikitanightness/grub-awakener/main/scripts/install-grub-config.sh | sudo sh
+```
+
+Or run the local script:
+
+```bash
+sudo ./scripts/install-grub-config.sh
+```
+
+The script will prompt you for `awakener_host`, `awakener_port`, write `/etc/grub.d/09_awakener`, and automatically offer to update GRUB.
+
+#### Manual Installation
+
+Alternatively, place [`grub.d/09_awakener`](grub.d/09_awakener) into `/etc/grub.d/09_awakener`, configure your router IP and port inside the file, make it executable, and update GRUB:
 
 ```bash
 sudo chmod +x /etc/grub.d/09_awakener
